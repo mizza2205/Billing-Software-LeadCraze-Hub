@@ -1,106 +1,136 @@
-const express = require("express");
-const cors = require("cors");
-const mysql = require("mysql2");
-const nodemailer = require("nodemailer");
+require('dotenv').config();
+const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const mongoose = require('mongoose');
+
+
+const User = require('./models/User.js'); 
 
 const app = express();
+
+// middleware
 app.use(cors());
 app.use(express.json());
 
-// MySQL connection
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "", // apna password daal agar hai
-  database: "billing_system",
+// ================== DB CONNECT ==================
+
+mongoose.connect('mongodb+srv://admin:billing123@cluster0.thv9zpf.mongodb.net/billing_db')
+
+.then(() => console.log('MongoDB Connected'))
+.catch(err => console.log(err));
+
+// ================== TEST ==================
+
+app.get('/', (req, res) => {
+  res.send('Server running');
 });
 
-db.connect((err) => {
-  if (err) {
-    console.log("DB Error:", err);
-  } else {
-    console.log("MySQL Connected");
-  }
-});
+// ================== SIGNUP (FIXED) ==================
 
-// ---------------- SIGNUP ----------------
-app.post("/signup", (req, res) => {
-  const { name, email, password } = req.body;
-
-  const sql = "INSERT INTO users (name, email, password) VALUES (?, ?, ?)";
-
-  db.query(sql, [name, email, password], (err, result) => {
-    if (err) {
-      res.send({ message: "Error" });
-    } else {
-      res.send({ message: "User registered successfully" });
-    }
-  });
-});
-
-// ---------------- LOGIN ----------------
-app.post("/login", (req, res) => {
-  const { email, password } = req.body;
-
-  const sql = "SELECT * FROM users WHERE email = ? AND password = ?";
-
-  db.query(sql, [email, password], (err, result) => {
-    if (err) {
-      res.send({ message: "Error" });
-    } else {
-      if (result.length > 0) {
-        res.send({ message: "Login successful" });
-      } else {
-        res.send({ message: "Invalid email or password" });
-      }
-    }
-  });
-});
-
-// ---------------- OTP SYSTEM ----------------
-let generatedOTP = "";
-
-// SEND OTP
-app.post("/send-otp", async (req, res) => {
-  const { email } = req.body;
-
-  generatedOTP = Math.floor(1000 + Math.random() * 9000).toString();
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: "YOUR_EMAIL@gmail.com", // 👈 apna gmail
-      pass: "YOUR_APP_PASSWORD", // 👈 app password
-    },
-  });
-
+app.post('/signup', async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: "YOUR_EMAIL@gmail.com",
-      to: email,
-      subject: "Your OTP",
-      text: `Your OTP is ${generatedOTP}`,
+    const { name, email, password } = req.body;
+
+    // check existing user
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
+
+    // hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // save user
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword
     });
 
-    res.send({ message: "OTP sent to email" });
+    await user.save();
+
+    res.json({ message: 'Signup successful' });
+
   } catch (error) {
     console.log(error);
-    res.send({ message: "Error sending OTP" });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// VERIFY OTP
-app.post("/verify-otp", (req, res) => {
-  const { otp } = req.body;
 
-  if (otp === generatedOTP) {
-    res.send({ message: "OTP Verified" });
-  } else {
-    res.send({ message: "Invalid OTP" });
+// ================== LOGIN (FIXED) ==================
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // find user
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // compare password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Wrong password' });
+    }
+
+    // generate token
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({
+      message: 'Login successful',
+      token
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// ---------------- SERVER ----------------
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+// ================== VERIFY TOKEN ==================
+
+function verifyToken(req, res, next) {
+  const bearerHeader = req.headers['authorization'];
+
+  if (!bearerHeader) {
+    return res.status(403).json({ message: 'Token required' });
+  }
+
+  const token = bearerHeader.split(' ')[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    req.user = decoded;
+    next();
+  });
+}
+
+// ================== PROTECTED ROUTE ==================
+
+app.get('/profile', verifyToken, (req, res) => {
+  res.json({
+    message: "User profile data",
+    user: req.user
+  });
+});
+
+// ================== SERVER ==================
+
+app.listen(4000, () => {
+  console.log('Server running on port 4000');
 });

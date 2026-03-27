@@ -6,7 +6,7 @@ function Login() {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch("http://localhost:5000/login", {
+      const response = await fetch("http://localhost:4000/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -26,7 +26,6 @@ function Login() {
       } else {
         alert(data.message || "Login Failed ❌");
       }
-
     } catch (error) {
       console.error(error);
       alert("Server Error ❌");
@@ -42,14 +41,18 @@ function Login() {
         placeholder="Email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-      /><br /><br />
+      />
+      <br />
+      <br />
 
       <input
         type="password"
         placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-      /><br /><br />
+      />
+      <br />
+      <br />
 
       <button onClick={handleLogin}>Login</button>
     </div>
